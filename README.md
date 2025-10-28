@@ -31,13 +31,17 @@ _To remove a syncroot that was previously created_
 - Elastic Defend
 - Sophos Intercept X
 
+## Demo Video
+
+Youtube: [https://www.youtube.com/watch?v=2_tanx7RSUw](https://www.youtube.com/watch?v=2_tanx7RSUw)
+
 ## ☕ Like what I do? You can fuel my creativity with a coffee!
 
 [![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/twosevenonethree)
 
-## Fuel the Mission
+## READING
 
-We’re a team of researchers and developers keeping our lab running, renewing essential software licenses, upgrading aging equipment, and getting coffee to reduce stress. **You can support us by buying a few books from our recommended list**. Every purchase directly funds lab maintenance, software licenses, equipment upgrades, and provides very big morale boosts.
+Some books you should read to sharpen your cybersecurity skills, especially in offensive security:
 
 [Books on Programming and Cybersecurity recommended by Zero Salarium Researchers](https://www.zerosalarium.com/2025/10/books-on-programming-and-cybersecurity-recommended.html)
 
