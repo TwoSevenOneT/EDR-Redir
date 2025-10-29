@@ -1,9 +1,33 @@
 #include <Windows.h>
 #include <iostream>
-#include <bindlink.h>
-#pragma comment(lib, "bindlink.lib")
 #include <cfapi.h>
 #pragma comment(lib, "CldApi.lib")
+
+typedef enum CREATE_BIND_LINK_FLAGS
+{
+    CREATE_BIND_LINK_FLAG_NONE = 0x00000000,
+    CREATE_BIND_LINK_FLAG_READ_ONLY = 0x00000001,
+    CREATE_BIND_LINK_FLAG_MERGED = 0x00000002,
+} CREATE_BIND_LINK_FLAGS;
+
+DEFINE_ENUM_FLAG_OPERATORS(CREATE_BIND_LINK_FLAGS);
+
+typedef  HRESULT (__stdcall *PtrBfSetupFilter)(
+    PVOID jobHandle,
+    CREATE_BIND_LINK_FLAGS createBindLinkFlags,
+    PCWSTR virtualPath,
+    PCWSTR backingPath,
+    UINT32 exceptionCount,
+    PCWSTR* const exceptionPaths);
+
+
+typedef  HRESULT(__stdcall* PtrBfRemoveMapping)(
+    PVOID reserved,
+    PCWSTR backingPath);
+
+
+PtrBfSetupFilter MyBfSetupFilter = NULL;
+PtrBfRemoveMapping MyBfRemoveMapping = NULL;
 
 void PrintHresultInfo(HRESULT hr) {
     DWORD win32 = HRESULT_CODE(hr); // same as hr & 0xFFFF
@@ -38,6 +62,20 @@ int wmain(int argc, wchar_t* argv[])
         std::wcerr << L"\tEDR-Redir.exe cloud <SyncRootPath>\n\t\tTo remove a syncroot that was previously created" << std::endl;
         return 1;
     }
+
+    HMODULE hBindflt = LoadLibraryA("bindfltapi.dll");
+    if (hBindflt)
+    {
+        MyBfSetupFilter = (PtrBfSetupFilter)GetProcAddress(hBindflt, "BfSetupFilter");
+        MyBfRemoveMapping = (PtrBfRemoveMapping)GetProcAddress(hBindflt, "BfRemoveMapping");
+    }
+    else
+    {
+        std::wcerr << std::endl;
+        std::wcerr << L"OS NOT SUPPORT" << std::endl;
+        return 1;
+    }
+	
     HRESULT hr;
 
     std::wstring arg1 = argv[1];
@@ -86,7 +124,7 @@ int wmain(int argc, wchar_t* argv[])
 		//bind link filter mode
         if (argc == 3)
         {
-            hr = RemoveBindLink(argv[2]);
+           hr = MyBfRemoveMapping(0, argv[2]);
             if (FAILED(hr))
             {
                 std::wcerr << L"Failed to unregister sync root. HRESULT: " << hr << std::endl;
@@ -100,7 +138,7 @@ int wmain(int argc, wchar_t* argv[])
         std::wstring virtualPath = argv[2];
         std::wstring backingPath = argv[3];
 
-        hr = CreateBindLink(virtualPath.c_str(), backingPath.c_str(), CREATE_BIND_LINK_FLAG_NONE, 0, nullptr);
+        hr = MyBfSetupFilter(0, CREATE_BIND_LINK_FLAG_NONE, virtualPath.c_str(), backingPath.c_str(), 0, NULL);
         if (FAILED(hr))
         {
             std::wcerr << L"CreateBindLink failed, HRESULT=0x" << std::hex << hr << L"\n";
