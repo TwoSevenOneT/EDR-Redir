@@ -1,7 +1,8 @@
 #include <Windows.h>
 #include <iostream>
-#include <cfapi.h>
-#pragma comment(lib, "CldApi.lib")
+#include <vector>
+//#include <bindlink.h>
+//#pragma comment(lib, "bindlink.lib")
 
 typedef enum CREATE_BIND_LINK_FLAGS
 {
@@ -12,7 +13,7 @@ typedef enum CREATE_BIND_LINK_FLAGS
 
 DEFINE_ENUM_FLAG_OPERATORS(CREATE_BIND_LINK_FLAGS);
 
-typedef  HRESULT (__stdcall *PtrBfSetupFilter)(
+typedef  HRESULT(__stdcall* PtrCreateBindLink)(
     PVOID jobHandle,
     CREATE_BIND_LINK_FLAGS createBindLinkFlags,
     PCWSTR virtualPath,
@@ -21,13 +22,14 @@ typedef  HRESULT (__stdcall *PtrBfSetupFilter)(
     PCWSTR* const exceptionPaths);
 
 
-typedef  HRESULT(__stdcall* PtrBfRemoveMapping)(
+typedef  HRESULT(__stdcall* PtrRemoveBindLink)(
     PVOID reserved,
     PCWSTR backingPath);
 
 
-PtrBfSetupFilter MyBfSetupFilter = NULL;
-PtrBfRemoveMapping MyBfRemoveMapping = NULL;
+PtrCreateBindLink MyCreateBindLink = NULL;
+PtrRemoveBindLink MyRemoveBindLink = NULL;
+
 
 void PrintHresultInfo(HRESULT hr) {
     DWORD win32 = HRESULT_CODE(hr); // same as hr & 0xFFFF
@@ -45,6 +47,64 @@ void PrintHresultInfo(HRESULT hr) {
     if (msg) { std::wcout << L"Message: " << msg << L"\n"; LocalFree(msg); }
 }
 
+bool CreateProxyFolder(const std::wstring& folderPath)
+{
+    if (CreateDirectoryW(folderPath.c_str(), nullptr))
+    {
+        std::wcout << L"Folder created: " << folderPath << std::endl;
+        return true;
+    }
+    else {
+        DWORD error = GetLastError();
+        if (error == ERROR_ALREADY_EXISTS) {
+            //std::wcout << L"Folder already exists: " << folderPath << std::endl;
+            return true;
+        }
+        else
+        {
+            std::wcerr << L"Failed to create folder: " << folderPath
+                << L" (Error code: " << error << L")" << std::endl;
+            return false;
+        }
+    }
+}
+
+std::vector<std::wstring> GetFolderPathsInDirectory(PCWSTR inputPath, std::wstring exceptionPath, std::wstring proxyPath)
+{
+    std::vector<std::wstring> folderPaths;
+    std::wstring basePath = inputPath;
+    if (basePath.back() != L'\\')
+    {
+        basePath += L'\\';
+    }
+    std::wstring searchPattern = basePath + L"*";
+    WIN32_FIND_DATAW findData;
+    HANDLE hFind = FindFirstFileW(searchPattern.c_str(), &findData);
+    if (hFind != INVALID_HANDLE_VALUE)
+    {
+        do
+        {
+            if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+                wcscmp(findData.cFileName, L".") != 0 &&
+                wcscmp(findData.cFileName, L"..") != 0) {
+                std::wstring fullPath = basePath + findData.cFileName;
+                // Skip if fullPath matches the exception
+                if (_wcsicmp(fullPath.c_str(), exceptionPath.c_str()) == 0) {
+                    continue;
+                }
+
+                //create new folder on proxy path (backed path)
+                std::wstring tempProxyPath = proxyPath + L'\\' + findData.cFileName;
+                CreateProxyFolder(tempProxyPath);
+
+                folderPaths.push_back(findData.cFileName);
+            }
+        } while (FindNextFileW(hFind, &findData));
+        FindClose(hFind);
+    }
+    return folderPaths;
+}
+
 int wmain(int argc, wchar_t* argv[])
 {
     std::wcout << L"\nEDR-Redir.exe: Tool to redirect the EDR to another location\n"
@@ -52,22 +112,23 @@ int wmain(int argc, wchar_t* argv[])
         << L"\n  Two Seven One Three: https://x.com/TwoSevenOneT\n"
         << L"\n==========================================================\n\n";
 
-    if (argc != 4 && argc != 3)
+    if (argc > 4 || argc < 2)
     {
         std::wcerr << std::endl;
-        std::wcerr << L"Bind link usage: EDR-Redir.exe bind <VirtualPath> <BackingPath>" << std::endl;
-        std::wcerr << L"\tEDR-Redir.exe bind <VirtualPath>\n\t\tTo remove a link that was previously created" << std::endl;
+        std::wcerr << L"EDR-Redir.exe <VirtualPath> <BackingPath>" << std::endl;
+        std::wcerr << L"EDR-Redir.exe <VirtualPath> <BackingPath> <ExceptionPath>" << std::endl;
+        std::wcerr << L"\nTo remove a link that was previously created" << std::endl;
+        std::wcerr << L"EDR-Redir.exe <VirtualPath>" << std::endl;
         std::wcerr << std::endl;
-        std::wcerr << L"Cloud filter usage: EDR-Redir.exe cloud <SyncRootPath> create" << std::endl;
-        std::wcerr << L"\tEDR-Redir.exe cloud <SyncRootPath>\n\t\tTo remove a syncroot that was previously created" << std::endl;
         return 1;
     }
-
-    HMODULE hBindflt = LoadLibraryA("bindfltapi.dll");
+    //std::vector<PCWSTR> exceptionPaths = GetFolderPathsInDirectory(argv[1]);
+    HRESULT hr;
+    HMODULE hBindflt = LoadLibraryW(L"bindfltapi.dll");
     if (hBindflt)
     {
-        MyBfSetupFilter = (PtrBfSetupFilter)GetProcAddress(hBindflt, "BfSetupFilter");
-        MyBfRemoveMapping = (PtrBfRemoveMapping)GetProcAddress(hBindflt, "BfRemoveMapping");
+        MyCreateBindLink = (PtrCreateBindLink)GetProcAddress(hBindflt, "BfSetupFilter");
+        MyRemoveBindLink = (PtrRemoveBindLink)GetProcAddress(hBindflt, "BfRemoveMapping");
     }
     else
     {
@@ -75,80 +136,138 @@ int wmain(int argc, wchar_t* argv[])
         std::wcerr << L"OS NOT SUPPORT" << std::endl;
         return 1;
     }
-	
-    HRESULT hr;
-
-    std::wstring arg1 = argv[1];
-    if (arg1 == L"cloud")
+    if (argc == 2)
     {
-        //Cloud filter mode
-        if (argc == 3)
+        int result = 0;
+        hr = MyRemoveBindLink(0, argv[1]);
+        if (FAILED(hr))
         {
-			hr = CfUnregisterSyncRoot(argv[2]);
-			if (FAILED(hr))
-			{
-				std::wcerr << L"Failed to unregister sync root. HRESULT: " << hr << std::endl;
-				PrintHresultInfo(hr);
-				return 1;
-			}
-			std::wcout << L"Unregister Sync Root: " << argv[2] << L" successfully" << std::endl;
-			return 0;
-        }
-        LPCWSTR syncRootPath = argv[2];
-        CF_SYNC_REGISTRATION registration = {};
-        registration.StructSize = sizeof(CF_SYNC_REGISTRATION);
-        registration.ProviderName = L"MySyncProvider";
-        registration.ProviderVersion = L"1.0";
-
-        CF_SYNC_POLICIES policies = { 0 };
-        policies.StructSize = sizeof(CF_SYNC_POLICIES);
-        policies.StructSize = sizeof(CF_SYNC_POLICIES);
-        policies.HardLink = CF_HARDLINK_POLICY_ALLOWED;
-        policies.Hydration.Primary = CF_HYDRATION_POLICY_FULL;
-        policies.InSync = CF_INSYNC_POLICY_NONE;
-        policies.Population.Primary = CF_POPULATION_POLICY_PARTIAL;
-
-        hr = CfRegisterSyncRoot(syncRootPath, &registration, &policies, CF_REGISTER_FLAG_NONE);
-        if (FAILED(hr)) 
-        {
-            std::wcerr << L"Failed to register sync root. HRESULT: " << hr << std::endl;
+            std::wcerr << L"Failed to remove Bind Link. HRESULT: " << hr << std::endl;
             PrintHresultInfo(hr);
-            return 1;
+            result = 1;
         }
-        std::wcout << L"Register Sync Root: " << argv[2] << L" successfully" << std::endl;
-        return 0;
-        //
-	}
-	else if (arg1 == L"bind")
-	{
-		//bind link filter mode
-        if (argc == 3)
+        else
         {
-           hr = MyBfRemoveMapping(0, argv[2]);
+            std::wcout << L"Remove Bind Link: " << argv[1] << L" successfully" << std::endl;
+        }
+        //just make sure all subfolders bind link are also removed
+        std::wstring basePath = argv[1];
+        if (basePath.back() != L'\\')
+        {
+            basePath += L'\\';
+        }
+        std::wstring searchPattern = basePath + L"*";
+        WIN32_FIND_DATAW findData;
+        HANDLE hFind = FindFirstFileW(searchPattern.c_str(), &findData);
+        if (hFind != INVALID_HANDLE_VALUE)
+        {
+            do
+            {
+                if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+                    wcscmp(findData.cFileName, L".") != 0 &&
+                    wcscmp(findData.cFileName, L"..") != 0) {
+                    std::wstring fullPath = basePath + findData.cFileName;
+                    MyRemoveBindLink(0, fullPath.c_str());
+                }
+            } while (FindNextFileW(hFind, &findData));
+            FindClose(hFind);
+        }
+        if (result != 0)
+        {
+            //try to remove again
+            hr = MyRemoveBindLink(0, argv[1]);
             if (FAILED(hr))
             {
-                std::wcerr << L"Failed to unregister sync root. HRESULT: " << hr << std::endl;
+                std::wcerr << L"Retry Failed to remove Bind Link. HRESULT: " << hr << std::endl;
                 PrintHresultInfo(hr);
-                return 1;
+                result = 1;
             }
-            std::wcout << L"Remove Bind Link: " << argv[2] << L" successfully" << std::endl;
-            return 0;
+            else
+            {
+                std::wcout << L"Retry Remove Bind Link: " << argv[1] << L" successfully" << std::endl;
+            }
+
         }
-
-        std::wstring virtualPath = argv[2];
-        std::wstring backingPath = argv[3];
-
-        hr = MyBfSetupFilter(0, CREATE_BIND_LINK_FLAG_NONE, virtualPath.c_str(), backingPath.c_str(), 0, NULL);
+        //
+        return result;
+    }
+    std::wstring virtualPath = argv[1];
+    std::wstring backingPath = argv[2];
+    if (argc == 3)
+    {
+        hr = MyCreateBindLink(0, CREATE_BIND_LINK_FLAG_NONE, virtualPath.c_str(), backingPath.c_str(), 0, NULL);
         if (FAILED(hr))
         {
             std::wcerr << L"CreateBindLink failed, HRESULT=0x" << std::hex << hr << L"\n";
             PrintHresultInfo(hr);
             return 1;
         }
-        std::wcout << L"CreateBindLink: (VirtualPath) <==> (BackingPath): " << virtualPath << L" <==> " << backingPath << L" successfully" << std::endl;
-        //
-	}
-     
+    }
+    else if (argc == 4)
+    {
+        std::wstring exceptionPath = argv[3];
+        std::vector<std::wstring> exceptionPaths = GetFolderPathsInDirectory(virtualPath.c_str(), exceptionPath, backingPath);
 
+        std::wcout << L"Total paths found in : " << virtualPath << L":" << exceptionPaths.size() << std::endl;
+
+
+        std::wcout << L"Starting create reverse proxy bind link..." << std::endl;
+        for (const std::wstring& path : exceptionPaths)
+        {
+            //vector contains only folder names, need to append to full path
+            //create reverse bind link for each folder found, except the exception path
+            //this will keep access to virtual path work normally
+            std::wstring tvirtualPath = backingPath;
+            tvirtualPath += L"\\";
+            tvirtualPath += path;
+
+            std::wstring tbackingPath = virtualPath;
+            tbackingPath += L"\\";
+            tbackingPath += path;
+
+            std::wcout << tvirtualPath << L" <==> " << tbackingPath << std::endl;
+            MyRemoveBindLink(0, tvirtualPath.c_str());
+            hr = MyCreateBindLink(0, CREATE_BIND_LINK_FLAG_NONE, tvirtualPath.c_str(), tbackingPath.c_str(), 0, NULL);
+            if (FAILED(hr))
+            {
+                std::wcerr << L"CreateBindLink with exception paths failed, HRESULT=0x" << std::hex << hr << L"\n";
+                PrintHresultInfo(hr);
+            }
+        }
+        std::wcout << L"Starting create proxy bind link..." << std::endl;
+        for (const std::wstring& path : exceptionPaths)
+        {
+            std::wstring tvirtualPath = virtualPath;
+            tvirtualPath += L"\\";
+            tvirtualPath += path;
+
+            std::wstring tbackingPath = backingPath;
+            tbackingPath += L"\\";
+            tbackingPath += path;
+
+            std::wcout << tvirtualPath << L" <==> " << tbackingPath << std::endl;
+            MyRemoveBindLink(0, tvirtualPath.c_str());
+            hr = MyCreateBindLink(0, CREATE_BIND_LINK_FLAG_NONE, tvirtualPath.c_str(), tbackingPath.c_str(), 0, NULL);
+            if (FAILED(hr))
+            {
+                std::wcerr << L"CreateBindLink with exception paths failed, HRESULT=0x" << std::hex << hr << L"\n";
+                PrintHresultInfo(hr);
+            }
+        }
+
+        std::wcout << L"Starting create main bind link..." << std::endl;
+        hr = MyCreateBindLink(0, CREATE_BIND_LINK_FLAG_NONE, virtualPath.c_str(), backingPath.c_str(), 0, NULL);
+        if (FAILED(hr))
+        {
+            std::wcerr << L"CreateBindLink with exception paths failed, HRESULT=0x" << std::hex << hr << L"\n";
+            PrintHresultInfo(hr);
+            return 1;
+        }
+
+        //
+    }
+
+    std::wcout << L"CreateBindLink: (VirtualPath) <==> (BackingPath): " << virtualPath << L" <==> " << backingPath << L" successfully" << std::endl;
+    //
     return 0;
 }
