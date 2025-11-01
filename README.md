@@ -37,7 +37,7 @@ _To remove a link that was previously created_
 
 Youtube EDR-Redir V1: [https://www.youtube.com/watch?v=2_tanx7RSUw](https://www.youtube.com/watch?v=2_tanx7RSUw)
 
-Youtube EDR-Redir V2: [https://youtu.be/oXh6MmNjjYM](https://youtu.be/oXh6MmNjjYM)
+Youtube EDR-Redir V2: [https://youtu.be/PbXPChdWy3E](https://youtu.be/PbXPChdWy3E)
 
 ## ☕ Like what I do? You can fuel my creativity with a coffee!
 
