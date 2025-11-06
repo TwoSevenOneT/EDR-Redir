@@ -28,9 +28,7 @@ _To remove a link that was previously created_
 
 ### Some EDR/Antivirus have been successfully tested
 
-- Microsoft Windows Defender
-- Elastic Defend
-- Sophos Intercept X
+- **Microsoft Windows Defender, Elastic Defend, Sophos Intercept X, ESET Premium, CrowdStrike Falcon**
 - ...
 
 ## Demo Video
