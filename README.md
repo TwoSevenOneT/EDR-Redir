@@ -37,9 +37,9 @@ Youtube EDR-Redir V1: [https://www.youtube.com/watch?v=2_tanx7RSUw](https://www.
 
 Youtube EDR-Redir V2: [https://youtu.be/PbXPChdWy3E](https://youtu.be/PbXPChdWy3E)
 
-## ☕ Like what I do? You can fuel my creativity with a coffee!
+## 🐦 Enjoying my work? Support the journey by following me on X
 
-[![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/twosevenonethree)
+[![Twitter Follow](https://img.shields.io/twitter/follow/TwoSevenOneT?style=for-the-badge&logo=x&color=000)](https://x.com/TwoSevenOneT)
 
 ## Tools For Security Researcher and Hacker
 
